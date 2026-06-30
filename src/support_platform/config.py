@@ -5,16 +5,16 @@ All settings are read from environment variables (or .env file) at startup.
 Add new settings here; never read os.environ directly elsewhere in the codebase.
 """
 
-from enum import Enum
+from enum import StrEnum
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class BotPlatform(str, Enum):
+class BotPlatform(StrEnum):
     DISCORD = 'discord'
 
 
-class LLMProvider(str, Enum):
+class LLMProvider(StrEnum):
     ANTHROPIC = 'anthropic'
     OPENAI_COMPATIBLE = 'openai_compatible'  # xAI Grok, standard OpenAI, etc.
 

@@ -5,6 +5,7 @@ Discord реализация PlatformAdapter.
   - Подключиться к Discord через discord.py
   - Фильтровать входящие сообщения по категории канала
   - Конвертировать discord.Message -> IncomingMessage (платформо-независимый объект)
+  - Передавать IncomingMessage во внешний message_handler (TicketDebouncer)
   - Отправлять ответы через TextChannel.send()
 
 Используется только в main.py через абстракцию PlatformAdapter.
@@ -12,6 +13,7 @@ Discord реализация PlatformAdapter.
 """
 
 import logging
+from collections.abc import Awaitable, Callable
 
 import discord
 
@@ -54,8 +56,13 @@ class DiscordAdapter(PlatformAdapter):
     где адаптер узнаёт токен и список категорий из .env.
     """
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        message_handler: Callable[[IncomingMessage], Awaitable[None]],
+    ) -> None:
         self._token = settings.discord_token
+        self._message_handler = message_handler
 
         # frozenset для O(1) поиска; lowercase один раз здесь, не при каждом сообщении
         self._monitored_categories: frozenset[str] = frozenset(
@@ -121,12 +128,7 @@ class DiscordAdapter(PlatformAdapter):
             incoming.content,
         )
 
-        # --- Временная заглушка Milestone 2 ---
-        # В Milestone 3 здесь появится вызов TicketDebouncer
-        await self.send_message(OutgoingMessage(
-            channel_id=incoming.channel_id,
-            content='Ваш запрос принят, мы разберёмся.',
-        ))
+        await self._message_handler(incoming)
 
     def _is_monitored(self, message: discord.Message) -> bool:
         """

@@ -93,12 +93,20 @@ content: str
 ```
 
 #### `TicketDebouncer`
-- Receives `IncomingMessage` events from the adapter
-- One `asyncio.Task` per active channel — timer resets on each new customer message
-- After `TICKET_DEBOUNCE_SECONDS` with no new messages, performs pre-flight checks:
-  1. Channel is in a monitored category (`uncategorized` or `orders`)
-  2. Last message in the channel was written by the customer (not a staff member)
-- If checks pass → fires `TicketProcessor`; otherwise stays silent
+- Receives `IncomingMessage` events from the adapter via injected `message_handler` callback
+- Accumulates ALL messages per user during the debounce window — passes `list[IncomingMessage]`
+  to `on_ready`, never just the last message (order_id may be in msg #1, question in msg #5)
+- State per active conversation: `ConversationState(task, messages, last_message_at)` stored in
+  `_states: dict[tuple[channel_id, author_id], ConversationState]`; cleared after `on_ready` fires
+- Timer key is `(channel_id, author_id)` — each user has an independent timer so multiple
+  customers in one channel cannot push each other's timers back
+- Customer message → append to messages, reset timer
+- Staff message → cancel ALL active conversations for that channel (staff already replied)
+- Pre-flight check "last message from customer" is implicit: timer only starts on customer
+  messages and is cancelled when staff replies — no separate check needed
+- Category filtering is done by the platform adapter before messages reach the debouncer
+- In-memory storage is correct for single-instance Discord bot; Discord sharding guarantees
+  one channel's events always go to the same shard (Redis needed for repo cache, not debouncer)
 
 #### `TicketContext` (dataclass)
 Mutable object that lives through the entire pipeline:

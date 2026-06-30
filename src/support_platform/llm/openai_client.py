@@ -28,5 +28,5 @@ class OpenAICompatibleLLM(BaseLLM):
         self._model = settings.llm_model
 
     async def complete(self, messages: list[ChatMessage]) -> str:
-        """Send messages to the provider and return the response text. Implemented in Milestone 4."""
+        """Milestone 4: отправить сообщения и вернуть текст ответа."""
         raise NotImplementedError

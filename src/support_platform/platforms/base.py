@@ -8,7 +8,7 @@ all three methods - structural duck typing alone is not sufficient here.
 
 from abc import ABC, abstractmethod
 
-from support_platform.core.models import IncomingMessage, OutgoingMessage
+from support_platform.core.models import OutgoingMessage
 
 
 class PlatformAdapter(ABC):
