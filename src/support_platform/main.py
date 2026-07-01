@@ -48,7 +48,7 @@ def build_adapter(
 
 async def main() -> None:
     """Точка входа: собрать компоненты и запустить адаптер."""
-    processor = TicketProcessor()
+    processor = TicketProcessor(llm=build_llm())
 
     async def _on_ticket_ready(messages: list[IncomingMessage]) -> None:
         """

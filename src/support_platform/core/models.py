@@ -52,14 +52,6 @@ class OutgoingMessage:
 
 
 @dataclass
-class ChatMessage:
-    """A single turn in an LLM conversation."""
-
-    role: str    # "system" | "user" | "assistant"
-    content: str
-
-
-@dataclass
 class CustomerData:
     """Customer information retrieved from lookup repositories."""
 

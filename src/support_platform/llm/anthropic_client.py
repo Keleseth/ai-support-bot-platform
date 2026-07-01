@@ -1,29 +1,28 @@
 """
-Anthropic Claude implementation of BaseLLM.
+Реализация BaseLLM для Anthropic Claude API.
 
-Converts our internal ChatMessage list to the Anthropic messages API format.
+Преобразует наш формат list[dict[str, str]] в формат Anthropic Messages API.
 
-Important: Anthropic separates the system prompt from the messages array.
-A ChatMessage with role="system" is extracted and passed as the `system=`
-parameter to the API - it cannot appear inline in the messages list.
+Важно: Anthropic выделяет системный промпт отдельно от массива сообщений.
+Сообщение с role='system' извлекается и передаётся как параметр system=
+в вызов API - оно не может быть в списке messages inline.
 
-Full implementation: Milestone 4.
+Реализация: Milestone 4.
 """
 
 from anthropic import AsyncAnthropic
 
 from support_platform.config import Settings
-from support_platform.core.models import ChatMessage
 from support_platform.llm.base import BaseLLM
 
 
 class AnthropicLLM(BaseLLM):
-    """LLM provider backed by the Anthropic Claude API."""
+    """LLM-провайдер на базе Anthropic Claude API."""
 
     def __init__(self, settings: Settings) -> None:
         self._client = AsyncAnthropic(api_key=settings.llm_api_key)
         self._model = settings.llm_model
 
-    async def complete(self, messages: list[ChatMessage]) -> str:
-        """Send messages to Claude and return the response text. Implemented in Milestone 4."""
+    async def complete(self, messages: list[dict[str, str]]) -> str:
+        """Отправить сообщения в Claude и вернуть текст ответа. Реализуется в Milestone 4."""
         raise NotImplementedError
