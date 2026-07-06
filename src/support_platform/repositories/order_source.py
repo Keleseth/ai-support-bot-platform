@@ -1,11 +1,10 @@
 """
-Абстракция источника данных о заказах.
+Abstraction for the order records data source.
 
-Repositories (например будущий OrderLookup) зависят ТОЛЬКО от этого
-интерфейса, а не от конкретного backend'а (сейчас - Discord-канал,
-в будущем - Postgres, Milestone 6). Тот же принцип, что уже применён
-в проекте для BaseLLM и PlatformAdapter: конкретную реализацию
-выбирает и создаёт Composition Root (main.py), а не сам репозиторий.
+Repositories depend only on this interface, never on a concrete backend
+(currently a Discord channel). Same principle already used for BaseLLM and
+PlatformAdapter: the composition root (main.py) chooses and builds the
+concrete implementation, not the repository itself.
 """
 
 from abc import ABC, abstractmethod
@@ -15,10 +14,10 @@ from dataclasses import dataclass
 @dataclass
 class OrderRecord:
     """
-    Одна запись о заказе - результат поиска.
+    One order record, as returned by a lookup.
 
-    Платформо-независимый: неважно, откуда взялась запись
-    (Discord-канал сейчас, БД потом) - поля одни и те же.
+    Platform-agnostic - the fields are the same regardless of where the
+    record came from (a Discord channel today, possibly a database later).
     """
 
     order_id: str
@@ -28,20 +27,20 @@ class OrderRecord:
 
 class BaseOrderRecordsSource(ABC):
     """
-    Умеет искать заказ по order_id или email. Не знает, откуда берутся данные.
+    Looks up an order by id or email. Knows nothing about where the data lives.
 
-    Методы async: реализация может ходить в БД или внешний API (сетевой I/O),
-    и это не должно блокировать event loop. Абстракция - только чтение;
-    запись/синхронизация данных (если она вообще нужна конкретному backend'у,
-    как Discord-реализации) - деталь реализации, не часть этого контракта.
+    Methods are async because an implementation may hit a database or an
+    external API - I/O that must not block the event loop. The abstraction
+    is read-only; writing or syncing data, if a given backend even needs
+    that (as the Discord implementation does), is outside this contract.
     """
 
     @abstractmethod
     async def find_by_order_id(self, order_id: str) -> OrderRecord | None:
-        """Найти заказ по id. None, если не найден."""
+        """Look up an order by id. None if not found."""
         ...
 
     @abstractmethod
     async def find_by_email(self, email: str) -> OrderRecord | None:
-        """Найти заказ по email. None, если не найден."""
+        """Look up an order by email. None if not found."""
         ...

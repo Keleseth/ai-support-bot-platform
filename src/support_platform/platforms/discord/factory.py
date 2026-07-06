@@ -1,30 +1,26 @@
 """
-Точка сборки Discord-подсистемы.
+Assembly point for the Discord subsystem.
 
-Единственное место в проекте, которое одновременно знает:
-  - что для Discord нужен именно commands.Bot (класс из discord.py,
-    подробнее почему не голый discord.Client - см. _build_client),
-  - что DiscordAdapter и DiscordOrderRecordsSource - это две отдельные,
-    ничего друг о друге не знающие реализации,
-  - что если обе выбраны как Discord (BOT_PLATFORM=discord и
-    ORDER_RECORDS_BACKEND=discord одновременно), им обоим стоит отдать
-    ОДИН и тот же client, а не открывать два соединения с одним сервером.
+The only place that knows both that Discord needs a commands.Bot rather
+than a plain discord.Client (see _build_client), and that DiscordAdapter
+and DiscordOrderRecordsSource are independent implementations unaware of
+each other - unless BOT_PLATFORM and ORDER_RECORDS_BACKEND are both
+discord, in which case they share one client instead of opening two
+connections to the same server.
 
-main.py про discord.py не знает и не импортирует его напрямую - только
-вызывает одну из трёх функций ниже и получает наружу абстракции
-(PlatformAdapter, BaseOrderRecordsSource). bot_platform и
-order_records_backend - независимые настройки: build_discord_adapter()
-и build_discord_order_records() каждая умеет работать сама по себе
-(создаёт свой client, если его не передали) - это нужно, когда выбор
-разъехался (например BOT_PLATFORM=discord, но ORDER_RECORDS_BACKEND=postgres).
-build_discord_pair() - частный случай "оба - Discord", просто передаёт
-обеим один и тот же client вместо того, чтобы каждая создавала свой.
+main.py never imports discord.py directly: it calls one of the functions
+below and gets back abstractions (PlatformAdapter, BaseOrderRecordsSource).
+Since bot_platform and order_records_backend are independent settings,
+build_discord_adapter() and build_discord_order_records() each work
+standalone, building their own client if none is passed - needed when the
+choice diverges, e.g. chat on Discord but orders read from elsewhere.
+build_discord_pair() is the "both are Discord" case: it just hands both
+the same client instead of each opening its own connection.
 
-build_discord_order_records() (и, соответственно, build_discord_pair())
-асинхронные: им нужно поднять пул asyncpg и применить схему БД
-(db/pool.py) прежде чем создать DiscordOrderRecordsSource - это тоже
-часть "знания про Discord-заказы", раз хранилище сейчас его внутренняя
-деталь (см. db/order_store.py).
+build_discord_order_records() (and build_discord_pair()) are async because
+they open the asyncpg pool and apply the schema (db/pool.py) before
+constructing DiscordOrderRecordsSource - Postgres is an implementation
+detail of that source, not something the rest of the app deals with.
 """
 
 from collections.abc import Awaitable, Callable
@@ -44,29 +40,27 @@ from support_platform.repositories.order_source import BaseOrderRecordsSource
 
 def _build_client() -> commands.Bot:
     """
-    Создать пустой client с нужными intents. Ничего не подключает
-    и не регистрирует - вызывающий код сам вешает на него обработчики.
+    Build a bare client with the required intents. Registers no handlers -
+    callers attach their own via add_listener.
 
-    commands.Bot, а не голый discord.Client: обычному Client'у можно назначить
-    только ОДИН обработчик на событие (client.event() делает setattr и
-    перезаписывает предыдущий). add_listener из discord.ext.commands умеет
-    держать список обработчиков на одно и то же событие - это и нужно, чтобы
-    DiscordAdapter и DiscordOrderRecordsSource (если оба на Discord) слушали
-    один client, не зная друг о друге.
+    commands.Bot, not a plain discord.Client: a plain Client allows only
+    one handler per event (client.event() overwrites the previous one).
+    add_listener supports several independent handlers on the same event,
+    which is what DiscordAdapter and DiscordOrderRecordsSource need when
+    both are listening on the same client.
     """
-    # Intents - явная подписка на типы событий Discord.
-    # message_content - "privileged intent": без него поле content у сообщений
-    # будет пустым (нужно и тикетам, и парсеру записей о заказах).
-    # Включить в Discord Developer Portal -> Bot -> Privileged Gateway Intents.
+    # message_content is a privileged intent - without it, message.content
+    # is empty. Enable it in the Discord Developer Portal under
+    # Bot -> Privileged Gateway Intents.
     intents = discord.Intents.default()
     intents.message_content = True
 
     client = commands.Bot(command_prefix=commands.when_mentioned, intents=intents)
 
-    # По умолчанию commands.Bot.on_message сам пытается распарсить префикс-команду
-    # из текста. Команд в проекте нет ни одной, поэтому глушим эту логику -
-    # иначе на каждое сообщение шёл бы лишний разбор и потенциальный
-    # CommandNotFound в логах библиотеки.
+    # commands.Bot.on_message tries to parse a command prefix out of every
+    # message by default. This project has no commands, so this no-op
+    # handler replaces that behavior and avoids the resulting
+    # CommandNotFound noise in the logs.
     async def on_message(message: discord.Message) -> None:
         pass
 
@@ -80,11 +74,11 @@ def build_discord_adapter(
     client: commands.Bot | None = None,
 ) -> PlatformAdapter:
     """
-    Discord-чат сам по себе.
+    Discord chat on its own.
 
-    client передаётся только когда его создал build_discord_pair (см. ниже);
-    при самостоятельном вызове (BOT_PLATFORM=discord, но заказы - не Discord)
-    создаёт свой собственный, единственный потребитель которого - этот адаптер.
+    client is only passed when build_discord_pair created it; a standalone
+    call (BOT_PLATFORM=discord but orders on another backend) builds its
+    own client, used by nothing else.
     """
     if client is None:
         client = _build_client()
@@ -96,11 +90,10 @@ async def build_discord_order_records(
     client: commands.Bot | None = None,
 ) -> BaseOrderRecordsSource:
     """
-    Discord-заказы сами по себе - симметрично build_discord_adapter.
+    Discord order records on their own, symmetric to build_discord_adapter.
 
-    client передаётся только когда его создал build_discord_pair; при
-    самостоятельном вызове (заказы - Discord, а чат - другая платформа)
-    создаёт свой собственный client.
+    client is only passed when build_discord_pair created it; a standalone
+    call (orders on Discord but chat elsewhere) builds its own.
     """
     if client is None:
         client = _build_client()
@@ -117,11 +110,11 @@ async def build_discord_pair(
     message_handler: Callable[[IncomingMessage], Awaitable[None]],
 ) -> tuple[PlatformAdapter, BaseOrderRecordsSource]:
     """
-    Оба - Discord: один client на двоих вместо двух отдельных соединений.
+    Both chat and order records on Discord: one shared client instead of two connections.
 
-    Порядок создания order_records/adapter не важен - оба только
-    регистрируют обработчики на client (add_listener), ничего не
-    отправляют и не читают до вызова adapter.start() в main.py.
+    Creation order between order_records and adapter doesn't matter - both
+    only register handlers via add_listener, nothing sends or reads until
+    adapter.start() is called in main.py.
     """
     client = _build_client()
     order_records = await build_discord_order_records(settings, client=client)

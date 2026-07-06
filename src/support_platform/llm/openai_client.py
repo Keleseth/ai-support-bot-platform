@@ -1,11 +1,11 @@
 """
-Реализация BaseLLM для OpenAI-совместимых API.
+BaseLLM implementation for OpenAI-compatible APIs.
 
-Используется для тестирования с xAI Grok или стандартным OpenAI.
-Оба используют один Python SDK - отличаются только base_url и api_key.
+Used for testing against xAI Grok or a standard OpenAI endpoint - both speak
+the same SDK and differ only in base_url and api_key.
 
-Для активации: LLM_PROVIDER=openai_compatible и LLM_BASE_URL в .env.
-xAI Grok base URL: https://api.x.ai/v1
+Activate with LLM_PROVIDER=openai_compatible and LLM_BASE_URL in .env
+(xAI Grok's base URL is https://api.x.ai/v1).
 """
 
 from openai import AsyncOpenAI
@@ -15,17 +15,16 @@ from support_platform.llm.base import BaseLLM
 
 
 class OpenAICompatibleLLM(BaseLLM):
-    """LLM-провайдер для любого OpenAI-совместимого API (xAI Grok, OpenAI и др.)."""
+    """LLM provider for any OpenAI-compatible API (xAI Grok, OpenAI, etc.)."""
 
     def __init__(self, settings: Settings) -> None:
         self._client = AsyncOpenAI(
             api_key=settings.llm_api_key,
-            base_url=settings.llm_base_url,  # None = стандартный OpenAI endpoint
+            base_url=settings.llm_base_url,  # None falls back to the standard OpenAI endpoint
         )
         self._model = settings.llm_model
 
     async def complete(self, messages: list[dict[str, str]]) -> str:
-        """Отправить сообщения в OpenAI-совместимый API и вернуть текст ответа."""
         response = await self._client.chat.completions.create(
             model=self._model,
             messages=messages,  # type: ignore[arg-type]

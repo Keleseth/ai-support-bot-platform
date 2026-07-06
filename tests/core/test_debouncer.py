@@ -1,4 +1,4 @@
-"""Тесты для core/debouncer.py - агрегация сообщений и тайминг TicketDebouncer."""
+"""Tests for core/debouncer.py - message aggregation and timing of TicketDebouncer."""
 
 import asyncio
 from collections.abc import Awaitable, Callable
@@ -8,8 +8,8 @@ from support_platform.core.debouncer import TicketDebouncer
 from support_platform.core.models import IncomingMessage
 from tests.conftest import make_incoming_message
 
-# Маленький delay - тесты ждут реальное время, но 0.05s не делает сьют заметно
-# медленнее, а 3x margin ниже даёт запас на дрожание планировщика asyncio.
+# Small delay - these tests wait on real time, but 0.05s doesn't noticeably
+# slow the suite down, and the 3x margin below absorbs asyncio scheduler jitter.
 _DELAY = 0.05
 
 
@@ -21,7 +21,7 @@ def _collector() -> tuple[
     list[list[IncomingMessage]],
     Callable[[list[IncomingMessage]], Awaitable[None]],
 ]:
-    """on_ready-колбэк, который просто копит все вызовы в список для ассертов."""
+    """on_ready callback that just collects every call into a list for assertions."""
     fired: list[list[IncomingMessage]] = []
 
     async def on_ready(messages: list[IncomingMessage]) -> None:

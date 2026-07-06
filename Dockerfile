@@ -4,9 +4,9 @@ RUN pip install --no-cache-dir uv
 
 WORKDIR /app
 
-# Отдельный слой на зависимости: пока pyproject.toml/uv.lock не менялись,
-# Docker переиспользует кеш этого RUN и не переустанавливает зависимости
-# на каждую правку кода в src/.
+# Dependencies get their own layer: as long as pyproject.toml/uv.lock don't
+# change, Docker reuses this RUN's cache instead of reinstalling on every
+# edit to src/.
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 

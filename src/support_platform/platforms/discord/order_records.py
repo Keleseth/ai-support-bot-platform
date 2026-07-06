@@ -1,43 +1,33 @@
 """
-Источник данных о заказах - канал Discord с записями вида:
+Order records source: a Discord channel where each message is one order, e.g.
     "Заказ: id 5 | email: example@mail.ru - в пути"
 
-Один пост в канале = один заказ. Формат придумал **** для теста,
-парсер (regex) заточен именно под него.
+One post = one order. The format is whatever the staff typed manually in
+the channel, so the parser regex below is written specifically for it.
 
-Ответственности:
-  - распарсить одну строку сообщения в OrderRecord (order_id, email, status)
-  - слушать gateway-события Discord (новое сообщение / правка / удаление)
-    и передавать результат в PostgresOrderRecordsStore - сам этот класс
-    заказы нигде не хранит
-  - синхронизировать хранилище БЕЗ повторного чтения истории канала при
-    каждом сообщении - Discord сам сообщает, какое именно сообщение изменилось
+Responsibilities:
+  - parse a single message into an OrderRecord (order_id, email, status)
+  - listen to Discord gateway events (new message / edit / delete) and pass
+    the result to PostgresOrderRecordsStore - this class stores nothing itself
+  - keep the store in sync without rereading the channel history on every
+    message, since Discord already tells us which message changed
 
-Почему ключ - message_id, а не order_id:
-  message_id никогда не меняется у существующего сообщения.
-  order_id - это то, что стафф ВПИСАЛ В ТЕКСТ, и его можно случайно
-  отредактировать (опечатка). Если бы ключом был order_id и стафф его
-  поправил, в кэше осталась бы "осиротевшая" запись под старым id.
-  Поиск по order_id/email при этом - просто перебор значений словаря:
-  заказов в учебном магазине немного, и лукап случается редко
-  (раз на клиентский тикет), так что O(n) никак не заметен.
+Why the key is message_id, not order_id:
+  message_id never changes for an existing message. order_id is text a
+  staff member typed and can edit by mistake (fixing a typo). If order_id
+  were the key, that edit would leave an orphaned record under the old id.
+  Lookup by order_id/email is a linear scan over the store's values - a
+  small shop has few orders and lookups are rare (once per ticket), so the
+  O(n) scan is not a concern.
 
-Использует discord.py напрямую - так и задумано для Milestone 5
-("Repositories backed by Discord channel search"). Когда в Milestone 6
-данные переедут в Postgres, этот файл целиком заменится на реализацию
-поверх БД - repositories и Core этого изменения не заметят, так как
-зависят от абстракции BaseOrderRecordsSource, а не от этого класса напрямую.
-
-Независимость от DiscordAdapter:
-  Этот класс НЕ знает про DiscordAdapter и никогда не должен его импортировать.
-  Обоим компонентам нужен один и тот же client (одно соединение с Discord на
-  процесс), но делят они его как равноправные подписчики: каждый сам
-  регистрирует свои обработчики через client.add_listener(...) - метод
-  commands.Bot (не голого discord.Client - у того на одно событие можно
-  повесить только один обработчик), рассчитанный именно на несколько
-  независимых слушателей одного события. Клиент создаёт и раздаёт им обоим
-  platforms/discord/factory.py - единственное место, которое знает про оба
-  класса одновременно.
+Independence from DiscordAdapter:
+  This class must never import DiscordAdapter. Both need the same client
+  (one Discord connection per process) but share it as equal subscribers:
+  each registers its own handlers via client.add_listener(...), a
+  commands.Bot method built for several independent listeners on one event
+  (unlike plain discord.Client, which allows only one handler per event).
+  platforms/discord/factory.py is the only place that knows about both
+  classes at once.
 """
 
 import logging
@@ -51,12 +41,12 @@ from support_platform.repositories.order_source import BaseOrderRecordsSource, O
 
 logger = logging.getLogger(__name__)
 
-# Разбор строки вида "Заказ: id 5 | email: example@mail.ru - в пути".
-#   - "заказ" и двоеточие после него - регистронезависимо, двоеточие необязательно
-#   - между частями допускаются любые пробелы (могут быть расставлены не идеально)
-#   - email - "всё, что не пробел" (простая проверка формата email тут не нужна,
-#     мы просто копируем то, что стафф написал в канале данных)
-#   - статус - всё, что осталось после " - " до конца строки
+# Matches lines like "Заказ: id 5 | email: example@mail.ru - в пути".
+#   - "заказ" and the colon after it are case-insensitive, colon optional
+#   - whitespace between parts is flexible
+#   - email is "anything non-whitespace" - no format validation, we just
+#     copy whatever staff wrote in the channel
+#   - status is everything after " - " to the end of the line
 _ORDER_LINE_RE = re.compile(
     r'заказ:?\s*id\s*(?P<order_id>\d+)\s*\|\s*email:\s*(?P<email>\S+)\s*-\s*(?P<status>.+)',
     re.IGNORECASE,
@@ -65,16 +55,16 @@ _ORDER_LINE_RE = re.compile(
 
 class DiscordOrderRecordsSource(BaseOrderRecordsSource):
     """
-    Слушает канал заказов и держит PostgresOrderRecordsStore в актуальном виде.
+    Listens to the order records channel and keeps PostgresOrderRecordsStore in sync.
 
-    Создаётся один раз в Composition Root (main.py, через
-    platforms/discord/factory.py) и получает уже готовый client (commands.Bot -
-    см. platforms/discord/factory.py, почему не голый discord.Client) и store
-    (см. db/order_store.py). Сам регистрирует на client свои обработчики
-    событий (add_listener) - снаружи никто не обязан знать, что этому классу
-    вообще нужны события Discord. Для остального приложения (repositories,
-    TicketProcessor) виден только интерфейс BaseOrderRecordsSource - store
-    им не виден и не нужен, это деталь конкретно этой реализации.
+    Built once in the composition root (main.py, via
+    platforms/discord/factory.py) with an already-built client (commands.Bot
+    - see factory.py for why not a plain discord.Client) and store (see
+    db/order_store.py). Registers its own event handlers via add_listener -
+    callers don't need to know this class listens to Discord events at all.
+    The rest of the app (repositories, TicketProcessor) only sees the
+    BaseOrderRecordsSource interface; the store is an implementation detail
+    hidden from them.
     """
 
     def __init__(
@@ -83,15 +73,15 @@ class DiscordOrderRecordsSource(BaseOrderRecordsSource):
         client: commands.Bot,
         store: PostgresOrderRecordsStore,
     ) -> None:
-        # id канала хранится как int - именно в таком виде его отдаёт discord.py
-        # в событиях (message.channel.id, payload.channel_id)
+        # Stored as int - the type discord.py uses in events
+        # (message.channel.id, payload.channel_id)
         self._channel_id = int(channel_id)
         self._client = client
         self._store = store
 
-        # add_listener (а не переопределение on_ready/on_message в подклассе)
-        # позволяет повесить на один client несколько независимых слушателей
-        # одного события - вторым таким слушателем будет DiscordAdapter.
+        # add_listener, rather than overriding on_ready/on_message in a
+        # subclass, lets a second independent listener (DiscordAdapter)
+        # attach to the same client.
         client.add_listener(self._on_ready, 'on_ready')
         client.add_listener(self._on_message, 'on_message')
         client.add_listener(self._on_raw_message_edit, 'on_raw_message_edit')
@@ -99,38 +89,38 @@ class DiscordOrderRecordsSource(BaseOrderRecordsSource):
 
     async def _on_ready(self) -> None:
         """
-        Срабатывает когда client подключился и авторизовался.
+        Fires once the client has connected and logged in.
 
-        Читаем всю историю канала заказов один раз - до этого момента
-        client.get_channel() ничего не найдёт, кеш каналов discord.py
-        заполняется только после подключения. Дальше store поддерживается
-        событиями (_on_message/_on_raw_message_edit/_on_raw_message_delete),
-        повторный history() не нужен. Записи просто перезаписываются теми же
-        значениями (upsert) - не проблема, если что-то уже было в БД с прошлого запуска.
+        Reads the whole channel history once - before this point,
+        client.get_channel() finds nothing, since discord.py's channel
+        cache only fills in after connecting. After startup, the store
+        stays in sync through events (_on_message/_on_raw_message_edit/
+        _on_raw_message_delete), so history() never runs again. Records
+        are simply upserted with the same values if they already exist
+        from a previous run.
         """
         channel = self._client.get_channel(self._channel_id)
         if not isinstance(channel, discord.TextChannel):
             logger.warning(
-                '[заказы] канал %s не найден или не текстовый - лукап заказов работать не будет',
+                'channel %s not found or not a text channel - order lookup will not work',
                 self._channel_id,
             )
             return
 
-        # limit=None - без ограничения в 100 сообщений по умолчанию.
-        # Важно: нам нужны ВСЕ записи, а не последние N.
+        # limit=None removes the default 100-message cap - every record is
+        # needed, not just the most recent ones
         count = 0
         async for message in channel.history(limit=None):
             await self._ingest(message.id, message.content)
             count += 1
 
-        logger.info('[заказы] обработано %d сообщений канала при старте', count)
+        logger.info('processed %d channel messages on startup', count)
 
     async def _on_message(self, message: discord.Message) -> None:
         """
-        Срабатывает на КАЖДОЕ сообщение, видимое боту (fan-out листенер -
-        DiscordAdapter получит то же самое сообщение своим отдельным
-        обработчиком). Сам проверяет, что сообщение из нужного канала -
-        никакой внешний код эту фильтрацию за нас не делает.
+        Fires on every message the bot can see (a fan-out listener -
+        DiscordAdapter gets the same message through its own handler).
+        Filters by channel itself; nothing else does that for it.
         """
         if message.channel.id != self._channel_id:
             return
@@ -138,21 +128,20 @@ class DiscordOrderRecordsSource(BaseOrderRecordsSource):
 
     async def _on_raw_message_edit(self, payload: discord.RawMessageUpdateEvent) -> None:
         """
-        Срабатывает на правку любого сообщения на сервере.
+        Fires when any message on the server is edited.
 
-        Почему raw, а не обычный on_message_edit:
-          обычная версия срабатывает только если старое сообщение уже лежит
-          во внутреннем кеше discord.py (у него есть предел размера и он
-          не гарантирует наличие старых сообщений). raw-версия прилетает
-          всегда, независимо от кеша библиотеки - для нас это критично,
-          иначе правка статуса заказа может быть просто пропущена.
+        Raw, not the plain on_message_edit: the plain version only fires if
+        the old message is already in discord.py's internal cache, which has
+        a size limit and no guarantee of holding older messages. The raw
+        version always fires regardless of that cache - missing an order
+        status edit is not an option here.
         """
         if payload.channel_id != self._channel_id:
             return
 
-        # payload.data - сырой JSON из Discord API. Поле "content" в нём
-        # присутствует, только если менялся именно текст сообщения
-        # (не появляется, например, при добавлении одной только реакции).
+        # payload.data is the raw JSON from the Discord API - 'content' is
+        # present only when the message text itself changed (not, say, when
+        # a reaction was added)
         content = payload.data.get('content')
         if content is None:
             return
@@ -160,28 +149,22 @@ class DiscordOrderRecordsSource(BaseOrderRecordsSource):
         await self._ingest(payload.message_id, content)
 
     async def _on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent) -> None:
-        """
-        Срабатывает на удаление любого сообщения на сервере. Raw - по той же
-        причине, что и у правки: не зависит от внутреннего кеша discord.py.
-        """
+        """Fires when any message on the server is deleted. Raw for the same reason as edits."""
         if payload.channel_id != self._channel_id:
             return
         await self._store.delete(payload.message_id)
 
     async def find_by_order_id(self, order_id: str) -> OrderRecord | None:
-        """Найти заказ по id. Возвращает None, если такого заказа нет в хранилище."""
         return await self._store.get_by_order_id(order_id)
 
     async def find_by_email(self, email: str) -> OrderRecord | None:
-        """Найти заказ по email. Сравнение регистронезависимое (делает store)."""
         return await self._store.get_by_email(email)
 
     async def _ingest(self, message_id: int, content: str) -> None:
-        """Распарсить содержимое сообщения и сохранить/обновить запись в store по его message_id."""
         record = self._parse(content)
         if record is None:
             logger.warning(
-                '[заказы] сообщение %s не соответствует формату записи о заказе: %r',
+                'message %s does not match the order record format: %r',
                 message_id,
                 content,
             )
@@ -189,7 +172,7 @@ class DiscordOrderRecordsSource(BaseOrderRecordsSource):
         await self._store.save(message_id, record)
 
     def _parse(self, content: str) -> OrderRecord | None:
-        """Разобрать одну строку канала в OrderRecord. None, если формат не совпал."""
+        """Parse one channel line into an OrderRecord. None if the format doesn't match."""
         match = _ORDER_LINE_RE.search(content)
         if match is None:
             return None

@@ -1,8 +1,8 @@
 """
-Composition Root - единственное место где приложение собирается.
+Composition root - the only place the application gets assembled.
 
-Читает BOT_PLATFORM и LLM_PROVIDER из settings и соединяет нужные реализации.
-Никакой другой модуль не принимает это решение.
+Reads BOT_PLATFORM and LLM_PROVIDER from settings and wires up the matching
+implementations. No other module makes that decision.
 """
 
 import asyncio
@@ -25,9 +25,8 @@ _LOG_DIR = Path(__file__).resolve().parent / 'logs'
 
 def _configure_logging() -> None:
     """
-    И в консоль (видно прямо в терминале docker compose up), и в файл
-    (support_platform/logs/app.log - история для ручных тестов, не пропадает
-    вместе со скроллбеком терминала).
+    Log to both the console (visible in docker compose up) and a file,
+    so history survives a scrolled-back terminal.
     """
     _LOG_DIR.mkdir(exist_ok=True)
     logging.basicConfig(
@@ -41,7 +40,7 @@ def _configure_logging() -> None:
 
 
 def build_llm() -> BaseLLM:
-    """Создать LLM-клиент согласно LLM_PROVIDER из settings."""
+    """Build the LLM client for the configured LLM_PROVIDER."""
     if settings.llm_provider == LLMProvider.ANTHROPIC:
         from support_platform.llm.anthropic_client import AnthropicLLM
 
@@ -59,19 +58,19 @@ async def build_platform_components(
     message_handler: Callable[[IncomingMessage], Awaitable[None]],
 ) -> tuple[PlatformAdapter, BaseOrderRecordsSource]:
     """
-    Создать адаптер платформы и источник данных о заказах.
+    Build the platform adapter and the order records source.
 
-    BOT_PLATFORM (чат) и ORDER_RECORDS_BACKEND (заказы) - независимые
-    настройки, выбираются и резолвятся по отдельности (_build_platform_adapter,
-    _build_order_records_source). Единственное исключение - если обе указывают
-    на Discord: тогда вместо двух независимых соединений создаётся одно общее
-    (build_discord_pair), чтобы не открывать двух ботов на один сервер.
+    BOT_PLATFORM (chat) and ORDER_RECORDS_BACKEND (orders) are independent
+    settings, resolved separately (_build_platform_adapter,
+    _build_order_records_source). The one exception is when both point to
+    Discord: then a single shared connection is built (build_discord_pair)
+    instead of opening two bots against the same server.
 
-    Асинхронная: источник заказов поднимает пул соединений с Postgres
-    (см. platforms/discord/factory.py), это I/O.
+    Async because the order records source opens a Postgres connection pool
+    (see platforms/discord/factory.py) - that is I/O.
 
-    main.py не импортирует ни discord, ни конкретные классы напрямую -
-    только фабричные функции нужных пакетов.
+    main.py never imports discord or concrete classes directly, only
+    factory functions from the relevant packages.
     """
     both_discord = (
         settings.bot_platform == BotPlatform.DISCORD
@@ -88,7 +87,7 @@ async def build_platform_components(
 def _build_platform_adapter(
     message_handler: Callable[[IncomingMessage], Awaitable[None]],
 ) -> PlatformAdapter:
-    """Создать адаптер платформы согласно BOT_PLATFORM (вне связки с заказами)."""
+    """Build the platform adapter for BOT_PLATFORM, independent of order records."""
     if settings.bot_platform == BotPlatform.DISCORD:
         from support_platform.platforms.discord.factory import build_discord_adapter
 
@@ -98,7 +97,7 @@ def _build_platform_adapter(
 
 
 async def _build_order_records_source() -> BaseOrderRecordsSource:
-    """Создать источник данных о заказах согласно ORDER_RECORDS_BACKEND (вне связки с чатом)."""
+    """Build the order records source for ORDER_RECORDS_BACKEND, independent of chat."""
     if settings.order_records_backend == OrderRecordsBackend.DISCORD:
         from support_platform.platforms.discord.factory import build_discord_order_records
 
@@ -108,26 +107,28 @@ async def _build_order_records_source() -> BaseOrderRecordsSource:
 
 
 async def main() -> None:
-    """Точка входа: собрать компоненты и запустить адаптер."""
+    """Entry point: assemble the components and start the adapter."""
     _configure_logging()
 
     async def _on_ticket_ready(messages: list[IncomingMessage]) -> None:
         """
-        Вызывается дебаунсером когда клиент замолчал.
-        Создаёт TicketContext, прогоняет через процессор, отправляет ответ.
+        Called by the debouncer once the customer goes quiet: builds a
+        TicketContext, runs it through the processor, sends the reply.
 
-        processor и adapter доступны через замыкание: Python ищет переменную
-        в момент вызова функции, не в момент её определения. К тому моменту,
-        как дебаунсер реально вызовет этот колбэк, обе уже созданы ниже.
+        processor and adapter are resolved through the closure - Python
+        looks up the name when the function runs, not when it's defined,
+        and both are already built below by the time the debouncer calls this.
         """
         context = TicketContext(messages=messages)
         context = await processor.process(context)
 
         if context.response:
-            await adapter.send_message(OutgoingMessage(
-                channel_id=messages[0].channel_id,
-                content=context.response,
-            ))
+            await adapter.send_message(
+                OutgoingMessage(
+                    channel_id=messages[0].channel_id,
+                    content=context.response,
+                )
+            )
 
     debouncer = TicketDebouncer(settings, on_ready=_on_ticket_ready)
     adapter, order_records = await build_platform_components(message_handler=debouncer.handle)

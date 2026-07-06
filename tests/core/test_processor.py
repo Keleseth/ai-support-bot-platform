@@ -1,4 +1,4 @@
-"""Тесты для core/processor.py - оркестратор пайплайна TicketProcessor."""
+"""Tests for core/processor.py - the TicketProcessor pipeline orchestrator."""
 
 from support_platform.core.models import Intent, TicketContext
 from support_platform.core.processor import TicketProcessor
@@ -63,7 +63,7 @@ async def test_order_id_takes_priority_over_email_when_both_present() -> None:
     )
 
     assert order_records.order_id_calls == ['23']
-    # email не проверялся вообще - заказ уже нашёлся по order_id, лукап по email пропущен
+    # email was never checked - the order was already found by order_id
     assert order_records.email_calls == []
 
 

@@ -1,7 +1,6 @@
 """
-Postgres-инфраструктура (Milestone 6).
+Postgres infrastructure: a connection pool and CRUD over its tables.
 
-Ничего не знает ни про Discord, ни про Telegram - только пул соединений
-и CRUD над таблицами. Конкретные источники данных (например
-DiscordOrderRecordsSource) держат объекты отсюда как зависимость.
+Knows nothing about Discord or Telegram - concrete data sources (e.g.
+DiscordOrderRecordsSource) hold objects from here as a dependency.
 """

@@ -1,17 +1,17 @@
 """
-Создание пула соединений asyncpg и первичная схема БД.
+Creates the asyncpg connection pool and applies the initial schema.
 
-Отдельно от order_store.py: пул - общий ресурс на всё приложение
-(если позже появятся другие таблицы, они будут использовать тот же пул),
-а order_store.py - CRUD конкретно над заказами.
+Separate from order_store.py: the pool is a shared resource for the whole
+app (future tables would reuse it), while order_store.py is CRUD specific
+to orders.
 """
 
 import asyncpg
 
 from support_platform.config import Settings
 
-# CREATE TABLE/INDEX IF NOT EXISTS - без Alembic, для одной простой таблицы
-# учебного проекта достаточно применять схему при каждом старте.
+# CREATE TABLE/INDEX IF NOT EXISTS instead of a migration tool - fine for a
+# single simple table, applied on every startup.
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS order_records (
     message_id BIGINT PRIMARY KEY,
@@ -25,11 +25,9 @@ CREATE INDEX IF NOT EXISTS idx_order_records_email ON order_records (email);
 
 
 async def create_pool(settings: Settings) -> asyncpg.Pool:
-    """Открыть пул соединений с БД, указанной в DATABASE_URL."""
     return await asyncpg.create_pool(dsn=settings.database_url)
 
 
 async def init_schema(pool: asyncpg.Pool) -> None:
-    """Создать таблицу заказов и индексы, если их ещё нет."""
     async with pool.acquire() as conn:
         await conn.execute(_SCHEMA_SQL)

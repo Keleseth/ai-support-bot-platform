@@ -1,24 +1,22 @@
 """
-Абстрактный базовый класс для LLM-провайдеров.
+Abstract base class for LLM providers.
 
-Почему эта абстракция существует: Anthropic SDK и OpenAI SDK имеют разные
-Python-интерфейсы - разные клиенты, форматы сообщений и формы ответов.
-BaseLLM нормализует их, чтобы TicketProcessor никогда не импортировал
-провайдер-специфичный код.
+The Anthropic and OpenAI SDKs have different Python interfaces - different
+clients, message formats, response shapes. BaseLLM normalizes them so
+TicketProcessor never imports provider-specific code.
 
-Формат сообщений: list[dict[str, str]] - стандарт OpenAI-совместимого API.
-Каждый dict содержит ключи 'role' и 'content'.
-Роли: 'system' | 'user' | 'assistant'.
-Сборку этих сообщений выполняет prompts.py - не провайдер и не Core.
+Message format is list[dict[str, str]], the OpenAI-compatible convention:
+each dict has 'role' ('system' | 'user' | 'assistant') and 'content'.
+Messages are assembled by prompts.py, not by a provider or Core.
 """
 
 from abc import ABC, abstractmethod
 
 
 class BaseLLM(ABC):
-    """Общий интерфейс для всех LLM-провайдеров."""
+    """Common interface for all LLM providers."""
 
     @abstractmethod
     async def complete(self, messages: list[dict[str, str]]) -> str:
-        """Отправить список сообщений в LLM и вернуть текст ответа."""
+        """Send messages to the LLM and return the response text."""
         ...

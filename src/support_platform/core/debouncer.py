@@ -1,28 +1,16 @@
 """
-TicketDebouncer - задерживает обработку пока клиент не перестанет печатать.
+TicketDebouncer waits for a lull in the customer's messages before running the pipeline.
 
-Почему дебаунс: клиенты часто отправляют несколько коротких сообщений подряд.
-Без дебаунса бот ответил бы на каждое неполное сообщение.
-С дебаунсом - ждёт тишины TICKET_DEBOUNCE_SECONDS, потом передаёт пакет в обработчик.
+Customers often send several short messages in a row instead of one, so
+firing on every message would mean answering half-formed thoughts. Instead
+the debouncer waits TICKET_DEBOUNCE_SECONDS after the last message, then
+hands the whole batch to on_ready as a single list[IncomingMessage] - the
+order id might be in the first message and the actual question in the third,
+so the processor needs the full batch, not just the last message.
 
-Агрегация сообщений: накапливаем ВСЕ сообщения пользователя за debounce-окно
-и передаём единым list[IncomingMessage]. Критично: клиент часто разбивает мысль
-на несколько сообщений - order_id может быть в первом, суть вопроса в пятом.
-Процессор получает полную картину, а не только последнее сообщение.
-
-Хранение: один словарь _states: dict[tuple[str,str], ConversationState].
-ConversationState группирует task + messages + last_message_at.
-Таск хранит только таймер - при его отмене сообщения остаются в state.messages.
-Словарь очищается когда таймер сработал (on_ready вызван) или стафф/бот ответил.
-
-Ключ: (channel_id, author_id).
-Причина: если в тикет-канале несколько обычных пользователей, каждый получает
-независимый таймер - сообщения одного не сбрасывают таймер другого.
-Текущая схема 'один тикет = один клиент' также работает корректно.
-
-Масштабирование: in-memory достаточно для Discord-бота на одном инстансе.
-При шардинге Discord гарантирует что события одного канала всегда идут в один шард.
-Redis нужен в этом проекте для кеша репозитория (Milestone 5), не для дебаунсера.
+State is keyed by (channel_id, author_id): if several customers post in the
+same ticket channel, each gets an independent timer instead of resetting
+one another's.
 """
 
 import asyncio
@@ -40,10 +28,10 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ConversationState:
     """
-    Состояние одного активного разговора.
+    State of one active conversation.
 
-    Создаётся при первом сообщении клиента.
-    Удаляется когда on_ready вызван или когда стафф/бот ответил в канале.
+    Created on the customer's first message, removed once on_ready fires
+    or a staff member replies in the channel.
     """
 
     task: asyncio.Task[None]
@@ -52,10 +40,7 @@ class ConversationState:
 
 
 class TicketDebouncer:
-    """
-    Планировщик дебаунса с накоплением сообщений для каждой пары (канал, автор).
-    Создаётся один экземпляр на всё приложение в main.py.
-    """
+    """Schedules debounced delivery of accumulated messages, one timer per (channel, author)."""
 
     def __init__(
         self,
@@ -67,12 +52,7 @@ class TicketDebouncer:
         self._states: dict[tuple[str, str], ConversationState] = {}
 
     async def handle(self, message: IncomingMessage) -> None:
-        """
-        Принять входящее сообщение.
-
-        Стафф -> закрыть все активные разговоры канала.
-        Клиент -> добавить сообщение в разговор и сбросить таймер.
-        """
+        """Staff message closes the channel's conversations; customer message extends its timer."""
         if message.is_staff:
             self._cancel_channel(message.channel_id)
             return
@@ -94,7 +74,7 @@ class TicketDebouncer:
             )
 
         logger.debug(
-            '[дебаунс] сброс таймера channel=%s author=%s накоплено=%d delay=%.1fs',
+            'timer reset channel=%s author=%s accumulated=%d delay=%.1fs',
             message.channel_id,
             message.author_id,
             len(self._states[key].messages),
@@ -102,29 +82,29 @@ class TicketDebouncer:
         )
 
     def _cancel_channel(self, channel_id: str) -> None:
-        """Закрыть все активные разговоры канала (стафф/бот ответил)."""
+        """Cancel and drop every active conversation in a channel."""
         keys = [k for k in self._states if k[0] == channel_id]
         for key in keys:
             self._states[key].task.cancel()
             del self._states[key]
         if keys:
-            logger.debug('[дебаунс] стафф ответил, закрыто разговоров: %d', len(keys))
+            logger.debug('staff replied, closed conversations: %d', len(keys))
 
     async def _delayed_fire(self, key: tuple[str, str]) -> None:
         """
-        Ждёт delay секунд, затем забирает накопленные сообщения и вызывает on_ready.
+        Sleep for the debounce delay, then hand the accumulated messages to on_ready.
 
-        Проверка task-identity в finally нужна из-за того что asyncio.cancel
-        не выполняется мгновенно: finally отменённого старого таска может сработать
-        уже после того как state.task обновлён на новый таск. Без проверки старый таск
-        мог бы удалить ConversationState которое уже принадлежит новому таску.
+        The task-identity check in finally exists because asyncio cancellation
+        isn't immediate: a cancelled task's finally block can still run after
+        state.task has already been replaced by a newer task, which would
+        otherwise delete state that belongs to that newer task.
         """
         try:
             await asyncio.sleep(self._delay)
             state = self._states.pop(key, None)
             if state and state.messages:
                 logger.info(
-                    '[дебаунс] таймер истёк channel=%s author=%s сообщений=%d',
+                    'timer fired channel=%s author=%s messages=%d',
                     key[0],
                     key[1],
                     len(state.messages),

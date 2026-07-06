@@ -1,9 +1,10 @@
 """
-Тесты для platforms/discord/adapter.py - _is_monitored.
+Tests for platforms/discord/adapter.py - _is_monitored.
 
-Регресс-тест на баг из живого теста: LLM отвечал в канале заказов, потому что
-фильтрация раньше шла по имени категории и совпала с именем тикет-категории.
-Теперь фильтр - точный id категории, тесты фиксируют именно это поведение.
+Regression test for a live bug: the LLM replied in the order records
+channel because filtering used to match on category name, and that name
+collided with the tickets category's name. The filter is now an exact
+category id, and these tests pin down that behavior.
 """
 
 from types import SimpleNamespace
@@ -53,5 +54,5 @@ def test_not_monitored_without_category() -> None:
 
 def test_not_monitored_for_non_text_channel() -> None:
     adapter = _adapter()
-    message = Mock(channel=Mock())  # без spec=discord.TextChannel - isinstance провалится
+    message = Mock(channel=Mock())  # no spec=discord.TextChannel, so isinstance fails
     assert adapter._is_monitored(message) is False

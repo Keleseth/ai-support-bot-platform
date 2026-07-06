@@ -1,4 +1,4 @@
-"""Тесты для platforms/discord/order_records.py - разбор строки канала заказов (_parse)."""
+"""Tests for platforms/discord/order_records.py - parsing an order channel line (_parse)."""
 
 from unittest.mock import Mock
 

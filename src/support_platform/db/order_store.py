@@ -1,11 +1,11 @@
 """
-CRUD над таблицей order_records - персистентное хранилище заказов.
+CRUD over the order_records table - persistent storage for orders.
 
-Ничего не знает про Discord: ключ записи (message_id) для этого класса -
-просто уникальный идентификатор строки, откуда он взялся - не его забота.
-Используется как зависимость внутри DiscordOrderRecordsSource
-(platforms/discord/order_records.py), но сам класс - не реализация
-BaseOrderRecordsSource и не часть публичного пайплайна.
+Knows nothing about Discord: message_id is just a unique row key to this
+class, where it came from is not its concern. Used as a dependency inside
+DiscordOrderRecordsSource (platforms/discord/order_records.py), but this
+class is not itself a BaseOrderRecordsSource implementation or part of the
+public pipeline.
 """
 
 import asyncpg
@@ -14,13 +14,13 @@ from support_platform.repositories.order_source import OrderRecord
 
 
 class PostgresOrderRecordsStore:
-    """Хранилище заказов поверх Postgres. Один message_id - одна запись."""
+    """Order storage on top of Postgres. One message_id maps to one record."""
 
     def __init__(self, pool: asyncpg.Pool) -> None:
         self._pool = pool
 
     async def save(self, message_id: int, record: OrderRecord) -> None:
-        """Создать запись или обновить существующую (по message_id)."""
+        """Insert a new record or update the existing one for this message_id."""
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """
@@ -38,16 +38,15 @@ class PostgresOrderRecordsStore:
             )
 
     async def delete(self, message_id: int) -> None:
-        """Удалить запись. Не ошибка, если такого message_id уже нет."""
+        """Delete a record. Not an error if message_id doesn't exist."""
         async with self._pool.acquire() as conn:
             await conn.execute('DELETE FROM order_records WHERE message_id = $1', message_id)
 
     async def get_by_order_id(self, order_id: str) -> OrderRecord | None:
-        """Найти заказ по id. None, если не найден."""
+        """Look up an order by id. None if not found."""
         async with self._pool.acquire() as conn:
-            # ORDER BY message_id - на случай дублей (стафф ошибся и указал
-            # один order_id в двух постах) детерминированно берём самый старый,
-            # как и раньше при переборе dict в порядке вставки.
+            # ORDER BY message_id: if staff duplicated an order_id across
+            # two posts by mistake, deterministically pick the oldest one.
             row = await conn.fetchrow(
                 """
                 SELECT order_id, email, status FROM order_records
@@ -60,7 +59,7 @@ class PostgresOrderRecordsStore:
         return _to_record(row)
 
     async def get_by_email(self, email: str) -> OrderRecord | None:
-        """Найти заказ по email. Сравнение регистронезависимое."""
+        """Look up an order by email, case-insensitive."""
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
@@ -75,7 +74,6 @@ class PostgresOrderRecordsStore:
 
 
 def _to_record(row: asyncpg.Record | None) -> OrderRecord | None:
-    """Смэппить строку asyncpg в OrderRecord. None, если строки нет."""
     if row is None:
         return None
     return OrderRecord(order_id=row['order_id'], email=row['email'], status=row['status'])

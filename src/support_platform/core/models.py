@@ -18,9 +18,9 @@ class Intent(Enum):
     OTHER means the bot stays silent.
     """
 
-    BUY_PRODUCT = 'buy_product'        # customer wants to purchase via PayPal
+    BUY_PRODUCT = 'buy_product'  # customer wants to purchase via PayPal
     ORDER_FOLLOWUP = 'order_followup'  # customer following up on existing order
-    OTHER = 'other'                    # bot takes no action
+    OTHER = 'other'  # bot takes no action
 
 
 @dataclass
@@ -33,7 +33,7 @@ class Attachment:
 
 @dataclass
 class IncomingMessage:
-    """Платформо-независимое представление входящего сообщения."""
+    """Platform-agnostic representation of an incoming message."""
 
     channel_id: str
     author_id: str

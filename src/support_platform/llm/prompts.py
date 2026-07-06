@@ -1,14 +1,12 @@
 """
-Шаблоны промптов и сборка сообщений для LLM-вызовов.
+Prompt templates and message assembly for the LLM calls.
 
-Ответственности:
-  - системные промпты для каждого типа вызова (intent / response)
-  - сборка list[dict[str, str]] из доменных объектов Core
-  - парсинг текстового ответа LLM обратно в доменный тип Intent
-
-Это единственное место где знают и про формат LLM API (роли),
-и про доменные объекты (IncomingMessage, CustomerData).
-TicketProcessor вызывает функции отсюда, сам не строит dict'ы.
+Builds the system prompts, turns domain objects into the
+list[dict[str, str]] shape the LLM providers expect, and parses the raw
+intent response back into an Intent. This is the one place that knows both
+the LLM message format and the domain objects (IncomingMessage,
+CustomerData) - TicketProcessor calls these functions rather than building
+message dicts itself.
 """
 
 import logging
@@ -17,8 +15,8 @@ from support_platform.core.models import CustomerData, IncomingMessage, Intent
 
 logger = logging.getLogger(__name__)
 
-# Строгий формат: только имя константы, без пояснений.
-# Это упрощает parse_intent - не нужен сложный парсер.
+# Strict format: only the constant name, no extra words - keeps parse_intent
+# a plain lookup instead of a small parser.
 _INTENT_SYSTEM = """\
 You are a customer support intent classifier for an online store.
 
@@ -47,10 +45,7 @@ Rules:
 
 
 def build_intent_messages(messages: list[IncomingMessage]) -> list[dict[str, str]]:
-    """
-    Сформировать список сообщений для LLM-вызова определения намерения.
-    Все сообщения клиента объединяются в один блок - сохраняем контекст пакета.
-    """
+    """Join all customer messages into one block so the LLM sees the full batch's context."""
     customer_text = '\n'.join(m.content for m in messages)
     return [
         {'role': 'system', 'content': _INTENT_SYSTEM},
@@ -59,16 +54,12 @@ def build_intent_messages(messages: list[IncomingMessage]) -> list[dict[str, str
 
 
 def parse_intent(llm_response: str) -> Intent:
-    """
-    Разобрать текстовый ответ LLM в значение Intent.
-    LLM может добавить пробелы или регистр - нормализуем.
-    При неизвестном значении возвращаем OTHER.
-    """
+    """Parse the LLM's raw intent text, falling back to OTHER on anything unexpected."""
     normalized = llm_response.strip().upper()
     try:
         return Intent[normalized]
     except KeyError:
-        logger.warning('[промпт] неизвестный интент от LLM: %r', llm_response)
+        logger.warning('unrecognized intent from LLM: %r', llm_response)
         return Intent.OTHER
 
 
@@ -76,10 +67,7 @@ def build_response_messages(
     messages: list[IncomingMessage],
     customer_data: CustomerData | None,
 ) -> list[dict[str, str]]:
-    """
-    Сформировать список сообщений для LLM-вызова генерации ответа.
-    Данные клиента из репозитория добавляются в user-сообщение если есть.
-    """
+    """Build the response prompt, appending customer_data to the user message when present."""
     customer_text = '\n'.join(m.content for m in messages)
     user_content = f'Customer messages:\n{customer_text}'
 

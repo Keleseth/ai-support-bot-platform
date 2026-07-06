@@ -1,4 +1,4 @@
-"""Тесты для llm/prompts.py - парсинг intent от LLM и сборка сообщений для вызовов."""
+"""Tests for llm/prompts.py - parsing the LLM's intent response and assembling call messages."""
 
 import pytest
 

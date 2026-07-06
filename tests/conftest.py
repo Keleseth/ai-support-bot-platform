@@ -4,11 +4,11 @@ Shared pytest fixtures and test doubles available to all tests without explicit 
 
 import os
 
-# config.py создаёт Settings() на уровне модуля при импорте - любой тест,
-# который тянет за собой support_platform.config (напрямую или транзитивно
-# через debouncer/adapter), упадёт без валидных значений обязательных полей.
-# setdefault - не перетирает реальный .env, если он есть, но тесты не должны
-# от него зависеть.
+# config.py creates Settings() at module level on import, so any test that
+# pulls in support_platform.config (directly or transitively, e.g. through
+# the debouncer or the adapter) fails without valid required fields.
+# setdefault won't override a real .env if one is present, but tests
+# shouldn't depend on it existing.
 os.environ.setdefault('DISCORD_TOKEN', 'test-token')
 os.environ.setdefault('LLM_API_KEY', 'test-key')
 os.environ.setdefault('TICKETS_CATEGORY_ID', '1000')
@@ -27,9 +27,9 @@ from support_platform.repositories.order_source import BaseOrderRecordsSource, O
 
 class FakeLLM(BaseLLM):
     """
-    Скриптованный LLM: отдаёт заранее заданные ответы по очереди, один
-    per вызов complete(). Хранит все полученные messages - тесты могут
-    проверить, что именно ушло в LLM, а не только результат.
+    Scripted LLM: returns queued responses in order, one per call to
+    complete(). Records every messages payload it received, so a test can
+    assert on what was actually sent, not just the final result.
     """
 
     def __init__(self, responses: list[str]) -> None:
@@ -43,11 +43,10 @@ class FakeLLM(BaseLLM):
 
 class FakeOrderRecordsSource(BaseOrderRecordsSource):
     """
-    In-memory фейк репозитория заказов. Ключи словарей - точные строки
-    (без нормализации регистра/пробелов - это ответственность реального
-    PostgresOrderRecordsStore, не тестируется здесь). Считает вызовы
-    каждого метода - тесты процессора проверяют, что лукап идёт в нужном
-    порядке (order_id раньше email) и не делается лишний раз.
+    In-memory order records fake. Dict keys are matched exactly - case and
+    whitespace normalization is PostgresOrderRecordsStore's job, not tested
+    here. Tracks every call so processor tests can assert the lookup order
+    (order_id before email) and that no redundant lookup happens.
     """
 
     def __init__(
@@ -77,7 +76,7 @@ def make_incoming_message(
     is_staff: bool = False,
     attachments: list[Attachment] | None = None,
 ) -> IncomingMessage:
-    """Фабрика IncomingMessage с разумными дефолтами - тестам обычно важен только content."""
+    """IncomingMessage factory with sane defaults - tests usually only care about content."""
     return IncomingMessage(
         channel_id=channel_id,
         author_id=author_id,
