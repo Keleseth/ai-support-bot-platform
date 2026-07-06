@@ -35,6 +35,7 @@ from support_platform.db.pool import create_pool, init_schema
 from support_platform.platforms.base import PlatformAdapter
 from support_platform.platforms.discord.adapter import DiscordAdapter
 from support_platform.platforms.discord.order_records import DiscordOrderRecordsSource
+from support_platform.platforms.discord.ticket_panel import TicketPanel
 from support_platform.repositories.order_source import BaseOrderRecordsSource
 
 
@@ -46,8 +47,8 @@ def _build_client() -> commands.Bot:
     commands.Bot, not a plain discord.Client: a plain Client allows only
     one handler per event (client.event() overwrites the previous one).
     add_listener supports several independent handlers on the same event,
-    which is what DiscordAdapter and DiscordOrderRecordsSource need when
-    both are listening on the same client.
+    which is what DiscordAdapter, DiscordOrderRecordsSource and TicketPanel
+    need when all three are listening on the same client.
     """
     # message_content is a privileged intent - without it, message.content
     # is empty. Enable it in the Discord Developer Portal under
@@ -79,9 +80,21 @@ def build_discord_adapter(
     client is only passed when build_discord_pair created it; a standalone
     call (BOT_PLATFORM=discord but orders on another backend) builds its
     own client, used by nothing else.
+
+    Also attaches TicketPanel to the same client - the "Create Ticket"
+    button is a chat-side feature (BOT_PLATFORM=discord), not tied to
+    ORDER_RECORDS_BACKEND, so it doesn't need its own build_* function or a
+    place in build_platform_components's return value.
     """
     if client is None:
         client = _build_client()
+
+    TicketPanel(
+        settings.support_channel_id,
+        settings.tickets_category_id,
+        settings.moderator_role_id,
+        client=client,
+    )
     return DiscordAdapter(settings, message_handler=message_handler, client=client)
 
 

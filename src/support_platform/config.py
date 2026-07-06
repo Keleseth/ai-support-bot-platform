@@ -66,6 +66,12 @@ class Settings(BaseSettings):
     # Store's PayPal address, sent to the customer on intent=BUY_PRODUCT.
     store_paypal_email: str
 
+    # Ticket panel: a "Create Ticket" button posted once in a support channel.
+    # Channel id where the panel message lives.
+    support_channel_id: str
+    # Role id granted access to every new ticket channel, alongside its creator.
+    moderator_role_id: str
+
     # Postgres. Separate fields rather than one DATABASE_URL - easier to wire
     # into docker-compose as individual env vars per service.
     db_host: str
