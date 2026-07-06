@@ -216,3 +216,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+.claude/
+CLAUDE.md
+
+# Application logs (support_platform/main.py:_configure_logging)
+src/support_platform/logs/
