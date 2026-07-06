@@ -55,7 +55,7 @@ class OutgoingMessage:
 class CustomerData:
     """Customer information retrieved from lookup repositories."""
 
-    invoice_id: str | None = None
+    order_id: str | None = None
     email: str | None = None
     order_status: str | None = None
 

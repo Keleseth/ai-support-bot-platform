@@ -85,8 +85,8 @@ def build_response_messages(
 
     if customer_data:
         lines = []
-        if customer_data.invoice_id:
-            lines.append(f'Invoice ID: {customer_data.invoice_id}')
+        if customer_data.order_id:
+            lines.append(f'Order ID: {customer_data.order_id}')
         if customer_data.email:
             lines.append(f'Email: {customer_data.email}')
         if customer_data.order_status:

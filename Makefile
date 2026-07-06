@@ -1,4 +1,4 @@
-.PHONY: install dev lint format typecheck test run clean help
+.PHONY: install dev lint format typecheck test run clean help docker-up docker-down
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*##"}; {printf "  %-12s %s\n", $$1, $$2}'
@@ -29,3 +29,9 @@ clean:  ## Remove all cache directories
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null; true
 	find . -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null; true
 	find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null; true
+
+docker-up:  ## Build and start backend + Postgres
+	docker compose up --build
+
+docker-down:  ## Stop and remove containers (Postgres data volume kept)
+	docker compose down

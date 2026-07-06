@@ -220,3 +220,6 @@ __marimo__/
 
 .claude/
 CLAUDE.md
+
+# Application logs (support_platform/main.py:_configure_logging)
+src/support_platform/logs/

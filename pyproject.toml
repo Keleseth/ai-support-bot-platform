@@ -13,6 +13,7 @@ dependencies = [
     "openai>=1.40",        # OpenAI SDK - used for xAI Grok (OpenAI-compatible API)
     "pydantic-settings>=2.4",
     "pydantic>=2.9",
+    "asyncpg>=0.29",
 ]
 
 [dependency-groups]
@@ -47,6 +48,10 @@ python_version = "3.12"
 strict = true
 mypy_path = "src"
 files = ["src"]
+
+[[tool.mypy.overrides]]
+module = "asyncpg.*"
+ignore_missing_imports = true
 
 # --- pytest ---------------------------------------------------------
 [tool.pytest.ini_options]
