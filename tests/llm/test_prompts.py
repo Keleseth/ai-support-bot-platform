@@ -63,3 +63,17 @@ def test_build_response_messages_omits_customer_data_block_when_empty() -> None:
     result = build_response_messages([make_incoming_message('привет')], CustomerData())
 
     assert 'Customer data:' not in result[1]['content']
+
+
+def test_build_response_messages_includes_paypal_email_when_given() -> None:
+    result = build_response_messages(
+        [make_incoming_message('хочу купить')], None, store_paypal_email='store@example.com'
+    )
+
+    assert 'Store PayPal address: store@example.com' in result[1]['content']
+
+
+def test_build_response_messages_omits_paypal_line_when_not_given() -> None:
+    result = build_response_messages([make_incoming_message('где мой заказ')], None)
+
+    assert 'PayPal' not in result[1]['content']
