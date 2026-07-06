@@ -41,7 +41,8 @@ Rules:
 - Be brief and friendly - one short paragraph maximum
 - Ask only for information you actually need to help (order number OR email)
 - Do not ask follow-up questions if the customer is clearly closing the conversation
-- Do not mention that you are an AI"""
+- Do not mention that you are an AI
+- For purchases, use only the PayPal address given below, if any - never invent one"""
 
 
 def build_intent_messages(messages: list[IncomingMessage]) -> list[dict[str, str]]:
@@ -66,8 +67,16 @@ def parse_intent(llm_response: str) -> Intent:
 def build_response_messages(
     messages: list[IncomingMessage],
     customer_data: CustomerData | None,
+    store_paypal_email: str | None = None,
 ) -> list[dict[str, str]]:
-    """Build the response prompt, appending customer_data to the user message when present."""
+    """
+    Build the response prompt.
+
+    Appends customer_data when present. store_paypal_email is only passed by
+    the caller for intent=BUY_PRODUCT - it has no place in an order-status
+    reply, so this function doesn't gate on intent itself, it just includes
+    whatever it's given.
+    """
     customer_text = '\n'.join(m.content for m in messages)
     user_content = f'Customer messages:\n{customer_text}'
 
@@ -81,6 +90,9 @@ def build_response_messages(
             lines.append(f'Order status: {customer_data.order_status}')
         if lines:
             user_content += '\n\nCustomer data:\n' + '\n'.join(lines)
+
+    if store_paypal_email:
+        user_content += f'\n\nStore PayPal address: {store_paypal_email}'
 
     return [
         {'role': 'system', 'content': _RESPONSE_SYSTEM},

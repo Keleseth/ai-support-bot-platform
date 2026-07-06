@@ -132,7 +132,11 @@ async def main() -> None:
 
     debouncer = TicketDebouncer(settings, on_ready=_on_ticket_ready)
     adapter, order_records = await build_platform_components(message_handler=debouncer.handle)
-    processor = TicketProcessor(llm=build_llm(), order_records=order_records)
+    processor = TicketProcessor(
+        llm=build_llm(),
+        order_records=order_records,
+        store_paypal_email=settings.store_paypal_email,
+    )
     await adapter.start()
 
 

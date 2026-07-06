@@ -31,9 +31,15 @@ _EMAIL_RE = re.compile(r'[\w.+-]+@[\w-]+\.[\w.-]+')
 class TicketProcessor:
     """Enriches a TicketContext in order: intent -> customer_data -> response."""
 
-    def __init__(self, llm: BaseLLM, order_records: BaseOrderRecordsSource) -> None:
+    def __init__(
+        self,
+        llm: BaseLLM,
+        order_records: BaseOrderRecordsSource,
+        store_paypal_email: str,
+    ) -> None:
         self._llm = llm
         self._order_records = order_records
+        self._store_paypal_email = store_paypal_email
 
     async def process(self, context: TicketContext) -> TicketContext:
         """Run the pipeline. Intent.OTHER leaves response as None - the bot stays silent."""
@@ -44,7 +50,9 @@ class TicketProcessor:
             return context
 
         context.customer_data = await self._lookup_customer(context.messages)
-        context.response = await self._generate_response(context.messages, context.customer_data)
+        context.response = await self._generate_response(
+            context.messages, context.customer_data, context.intent
+        )
         logger.info('response=%r', context.response)
 
         return context
@@ -82,8 +90,14 @@ class TicketProcessor:
         self,
         messages: list[IncomingMessage],
         customer_data: CustomerData,
+        intent: Intent,
     ) -> str:
-        return await self._llm.complete(build_response_messages(messages, customer_data))
+        # Only relevant when the customer is trying to buy something -
+        # irrelevant (and potentially confusing) in an order-status reply.
+        paypal_email = self._store_paypal_email if intent == Intent.BUY_PRODUCT else None
+        return await self._llm.complete(
+            build_response_messages(messages, customer_data, paypal_email)
+        )
 
 
 def _to_customer_data(record: OrderRecord) -> CustomerData:
